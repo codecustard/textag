@@ -1,0 +1,5 @@
+# runtime (Hugging Face Space)
+torch
+torchvision
+gradio>=4
+pillow

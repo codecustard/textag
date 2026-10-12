@@ -1,0 +1,7 @@
+-r requirements.txt
+scikit-learn
+matplotlib
+pandas
+jupyter
+ipykernel
+pytest

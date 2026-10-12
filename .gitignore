@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.ipynb_checkpoints/
+data/
+.DS_Store
+*.log
+# keep only the final weights (tracked with Git LFS on Hugging Face)
+models/*
+!models/.gitkeep
