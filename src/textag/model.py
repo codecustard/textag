@@ -1,8 +1,9 @@
-"""Models. Step 4: a small CNN built from scratch (the baseline)."""
+"""Models: a small CNN built from scratch (baseline) and a pretrained ResNet18 (transfer learning)."""
 
 from __future__ import annotations
 
 import torch.nn as nn
+from torchvision import models
 
 NUM_CLASSES = 47
 
@@ -41,8 +42,36 @@ class SmallCNN(nn.Module):
         return self.classifier(self.features(x))
 
 
+def resnet18(num_classes: int = NUM_CLASSES, pretrained: bool = True, freeze_backbone: bool = True):
+    """ResNet18 pretrained on ImageNet, with a new last layer for our classes.
+
+    freeze_backbone=True: only the new last layer trains (feature extractor).
+    Call unfreeze(model) later to fine-tune every layer.
+    """
+    weights = models.ResNet18_Weights.DEFAULT if pretrained else None
+    model = models.resnet18(weights=weights)
+
+    # Freeze the pretrained layers so their weights don't change
+    if freeze_backbone:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    # Replace the last layer: 512 features -> 1000 ImageNet classes  becomes  512 -> our classes
+    model.fc = nn.Sequential(
+        nn.Dropout(0.3),
+        nn.Linear(model.fc.in_features, num_classes),
+    )
+    return model
+
+
+def unfreeze(model: nn.Module):
+    """Make every layer trainable (for fine-tuning)."""
+    for param in model.parameters():
+        param.requires_grad = True
+
+
 def build(name: str, **kw):
-    return {"small_cnn": SmallCNN}[name](**kw)
+    return {"small_cnn": SmallCNN, "resnet18": resnet18}[name](**kw)
 
 
 def n_params(model: nn.Module) -> int:
