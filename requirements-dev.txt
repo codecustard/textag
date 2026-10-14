@@ -5,3 +5,5 @@ pandas
 jupyter
 ipykernel
 pytest
+tqdm
+huggingface_hub

@@ -1,5 +1,8 @@
-# runtime (Hugging Face Space)
-torch
-torchvision
-gradio>=5
-pillow
+# Runtime: app.py on a Hugging Face Space (Linux, CPU). Versions pinned to the ones tested.
+# CPU-only PyTorch builds: much smaller download than the default CUDA builds.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1
+torchvision==0.29.1
+gradio==6.30.0
+pillow==12.2.0
+numpy==2.4.4
