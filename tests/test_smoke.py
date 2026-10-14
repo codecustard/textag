@@ -27,3 +27,18 @@ def test_predict_returns_top3_and_time():
     assert len(preds) == 3
     assert all(label in classes and 0 <= p <= 1 for label, p in preds)
     assert seconds > 0
+
+
+def test_app_classify_returns_top3_and_time():
+    import pytest
+    root = Path(__file__).resolve().parents[1]
+    if not (root / "models" / "textag.pt").exists():
+        pytest.skip("needs the trained weights in models/textag.pt")
+    sys.path.insert(0, str(root))
+    from PIL import Image
+    import app
+
+    labels, seconds = app.classify(Image.new("RGB", (300, 300)))
+    assert len(labels) == 3
+    assert seconds.endswith(" s")
+    assert app.classify(None) == ({}, "")
