@@ -100,11 +100,13 @@ def train(model: torch.nn.Module,
           epochs: int,
           device: torch.device,
           scheduler=None,
-          patience: int = None) -> Dict[str, List]:
+          patience: int = None,
+          verbose: bool = True) -> Dict[str, List]:
     """Trains and validates a model for up to `epochs` epochs.
 
     scheduler: optional ReduceLROnPlateau, stepped on val loss each epoch.
     patience: optional early stopping; stop after this many epochs without val-loss improvement.
+    verbose: print progress each epoch (set False to train quietly, e.g. for many quick runs).
 
     Returns a results dictionary, e.g. {train_loss: [...], train_acc: [...],
     val_loss: [...], val_acc: [...], best_epoch: 12}.
@@ -123,7 +125,7 @@ def train(model: torch.nn.Module,
     model.to(device)
 
     # Loop through training and validation steps for a number of epochs
-    for epoch in tqdm(range(epochs)):
+    for epoch in tqdm(range(epochs), disable=not verbose):
         train_loss, train_acc = train_step(model=model,
                                            dataloader=train_dataloader,
                                            loss_fn=loss_fn,
@@ -135,14 +137,15 @@ def train(model: torch.nn.Module,
                                      device=device)
 
         # Print out what's happening
-        print(
-            f"Epoch: {epoch+1} | "
-            f"train_loss: {train_loss:.4f} | "
-            f"train_acc: {train_acc:.4f} | "
-            f"val_loss: {val_loss:.4f} | "
-            f"val_acc: {val_acc:.4f} | "
-            f"lr: {optimizer.param_groups[0]['lr']:.0e}"
-        )
+        if verbose:
+            print(
+                f"Epoch: {epoch+1} | "
+                f"train_loss: {train_loss:.4f} | "
+                f"train_acc: {train_acc:.4f} | "
+                f"val_loss: {val_loss:.4f} | "
+                f"val_acc: {val_acc:.4f} | "
+                f"lr: {optimizer.param_groups[0]['lr']:.0e}"
+            )
 
         # Update results dictionary
         results["train_loss"].append(train_loss)
@@ -163,14 +166,16 @@ def train(model: torch.nn.Module,
         else:
             epochs_without_improvement += 1
             if patience is not None and epochs_without_improvement >= patience:
-                print(f"Early stopping: no val_loss improvement for {patience} epochs")
+                if verbose:
+                    print(f"Early stopping: no val_loss improvement for {patience} epochs")
                 break
 
     # Put the best weights back into the model
     model.load_state_dict(best_weights)
     results["best_epoch"] = best_epoch
-    print(f"Best epoch: {best_epoch} | val_loss: {best_val_loss:.4f} | "
-          f"val_acc: {results['val_acc'][best_epoch - 1]:.4f}")
+    if verbose:
+        print(f"Best epoch: {best_epoch} | val_loss: {best_val_loss:.4f} | "
+              f"val_acc: {results['val_acc'][best_epoch - 1]:.4f}")
 
     # Return the filled results at the end of the epochs
     return results

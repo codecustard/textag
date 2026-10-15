@@ -5,6 +5,10 @@ __pycache__/
 data/
 .DS_Store
 *.log
-# keep only the final weights (tracked with Git LFS on Hugging Face)
+# models/: commit only the final trained weights
+#   textag.pt      fine-tuned ResNet18 used by the app (45 MB, under GitHub's 100 MB file limit), from 03_resnet
+#   clip_probe.pt  CLIP linear probe (100 KB), from 06_clip
 models/*
 !models/.gitkeep
+!models/textag.pt
+!models/clip_probe.pt

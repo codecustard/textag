@@ -7,3 +7,4 @@ ipykernel
 pytest
 tqdm
 huggingface_hub
+open_clip_torch
