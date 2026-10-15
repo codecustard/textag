@@ -3,7 +3,7 @@
 Upload a texture and TexTag tags it by what it looks like (cracked, woven, scaly, marbled, honeycombed, ...),
 with its top 3 guesses and the inference time. Built with PyTorch and Gradio.
 
-**Live demo:** _link coming soon_
+**Demo:** `python app.py --share` starts the app and prints a temporary public link (`https://….gradio.live`, valid 72 hours). See [Run locally](#run-locally).
 
 ![TexTag app](docs/app.png)
 
@@ -35,6 +35,7 @@ EDA: perfectly balanced, no corrupted files, all RGB, sizes mostly 300–640 px 
 | 5 | [04_evaluate](notebooks/04_evaluate.ipynb) | Test set: accuracy, top-3, precision/recall/F1, confusion matrix, mistakes |
 | 6 | [05_inference](notebooks/05_inference.ipynb), `src/textag/infer.py` | Single-image prediction timed with `time.perf_counter()` |
 | 7 | `app.py` | Gradio app: image in → top 3 tags + inference time |
+| 8 | [06_clip](notebooks/06_clip.ipynb) | **Model 3, CLIP:** zero-shot (no training) and a linear probe (new last layer on frozen CLIP), plus text search |
 
 **Training setup** (same for every model, so the comparison is fair): `CrossEntropyLoss` (standard for multi-class),
 `AdamW` (weight decay 1e-4), batch size 32, `ReduceLROnPlateau` (halve the LR when validation loss stalls for 3 epochs),
@@ -57,6 +58,8 @@ plus the LR scheduler tune the number of epochs and the learning rate automatica
 | SmallCNN (from scratch, 40 epochs) | 428k | 28.4% |
 | ResNet18 phase 1 (feature extractor) | 24k | 56.2% |
 | **ResNet18 phase 2 (fine-tuned)** | 11.2M | **62.4%** |
+| CLIP ViT-B/32 zero-shot (no training) | 0 | 43.9% |
+| CLIP ViT-B/32 linear probe | 24k | 74.2% |
 
 **Final model on the test set** (never used for training or model selection):
 
@@ -75,16 +78,27 @@ plus the LR scheduler tune the number of epochs and the learning rate automatica
 - **Top-3 is 82.6%:** the right tag is among the 3 suggestions 4 times out of 5. Mistakes are usually look-alikes (dotted ↔ polka-dotted is the biggest confusion), so for search and tagging they're still useful results.
 - **Best classes** are regular patterns (chequered, freckled, paisley); **worst** are vague ones (blotchy, marbled, bumpy).
 
+**Model 3: CLIP** ([06_clip](notebooks/06_clip.ipynb)). CLIP learned from ~400M images with captions and turns both images and text into 512 numbers.
+
+| CLIP ViT-B/32 | Test accuracy | Test top-3 |
+|---|---|---|
+| Zero-shot (compare each image with "a cracked texture." etc., no training) | 43.8% | 64.4% |
+| Linear probe (new last layer on frozen CLIP, learning rate picked by a small grid search) | **74.1%** | **90.1%** |
+
+- Training only a last layer on frozen CLIP beats fine-tuning all of ResNet18 (74.1% vs 62.3%): what the backbone learned beforehand mattered more than fine-tuning.
+- The cost: CLIP's image encoder is ~8× bigger (~350 MB vs 45 MB) and ~3× slower per image on CPU. The app still uses ResNet18.
+- CLIP can search with words outside the 47 classes ("rusty metal", "wood planks", "brick wall" find the right textures), the basis for a texture-search tool.
+
 ## Repository
 
 ```
 app.py                  Gradio app
 src/textag/             data.py, model.py, engine.py (training loop), infer.py
-notebooks/              01_eda … 05_inference (executed, with outputs)
+notebooks/              01_eda … 06_clip (executed, with outputs)
 tests/                  smoke tests (pytest)
 examples/               example images for the app (from the DTD test set)
 scripts/deploy_space.py upload the app to a Hugging Face Space
-models/textag.pt        trained weights (not in git; produced by 03_resnet)
+models/textag.pt        trained weights used by the app (45 MB, produced by 03_resnet)
 ```
 
 ## Run locally
@@ -93,9 +107,9 @@ models/textag.pt        trained weights (not in git; produced by 03_resnet)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python app.py            # open http://127.0.0.1:7860
+python app.py --share    # also prints a public link, valid 72 hours, while the app runs
 ```
 
-Needs `models/textag.pt` (download it from the last cell of `03_resnet` on Colab).
 `requirements.txt` pins the versions used for deployment (Linux, CPU). On an **Intel Mac**, current PyTorch isn't available;
 use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gradio>=5" pillow` instead.
 
@@ -104,9 +118,11 @@ use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gra
 
 ## Deploy
 
-`python scripts/deploy_space.py` uploads `app.py`, `requirements.txt`, `src/textag/`, the weights and the examples to a
-Hugging Face Space (needs `hf auth login` with a write token). Note: Hugging Face now requires a paid plan to create
-Gradio Spaces on its free CPU hardware.
+- **Code, notebooks and weights:** this GitHub repository.
+- **Public demo:** `python app.py --share` (Gradio share link, 72 hours, while the app runs).
+- **Hugging Face Space (optional):** `python scripts/deploy_space.py` uploads `app.py`, `requirements.txt`, `src/textag/`,
+  the weights and the examples to a Space (needs `hf auth login` with a write token). Hugging Face now requires a paid plan
+  to create Gradio Spaces on its free CPU hardware, so this isn't used for the public demo.
 
 ## Limitations
 
@@ -117,7 +133,7 @@ Gradio Spaces on its free CPU hardware.
 
 ## Future work
 
-- **Open-vocabulary search with CLIP** (search with any words, e.g. "mossy stone"), with TexTag tags as filters
+- **Switch to CLIP** for more accurate tags and open-vocabulary search (any words, e.g. "mossy stone"), with tags as filters
 - **Multi-label tagging** (several tags per texture)
 - **Game-engine plugin** (e.g. Godot): index a project's textures once, then search by content instead of filename; group PBR map sets (base color, normal, roughness, ...) into one material and tag the base color
 - Retrain on game-style textures and material classes
@@ -128,4 +144,5 @@ Gradio Spaces on its free CPU hardware.
 - He et al. (2015), *Deep Residual Learning for Image Recognition* (ResNet). [arXiv:1512.03385](https://arxiv.org/abs/1512.03385)
 - Yosinski et al. (2014), *How transferable are features in deep neural networks?* [arXiv:1411.1792](https://arxiv.org/abs/1411.1792)
 - Simonyan & Zisserman (2014), *Very Deep Convolutional Networks* (VGG). [arXiv:1409.1556](https://arxiv.org/abs/1409.1556)
+- Radford et al. (2021), *Learning Transferable Visual Models From Natural Language Supervision* (CLIP). [arXiv:2103.00020](https://arxiv.org/abs/2103.00020)
 - Wang et al., *CNN Explainer* (TinyVGG). [poloclub.github.io/cnn-explainer](https://poloclub.github.io/cnn-explainer/)

@@ -42,4 +42,6 @@ demo = gr.Interface(
 )
 
 if __name__ == "__main__":
-    demo.launch()
+    # python app.py          -> local only (http://127.0.0.1:7860)
+    # python app.py --share  -> also a temporary public link (https://....gradio.live, valid 72 hours)
+    demo.launch(share="--share" in sys.argv)
