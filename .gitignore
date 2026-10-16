@@ -8,7 +8,10 @@ data/
 # models/: commit only the final trained weights
 #   textag.pt      fine-tuned ResNet18 used by the app (45 MB, under GitHub's 100 MB file limit), from 03_resnet
 #   clip_probe.pt  CLIP linear probe (100 KB), from 06_clip
+#   textag_multilabel.pt, smallcnn_multilabel.pt  multi-label models (45 MB, 2 MB), from 07_search
 models/*
 !models/.gitkeep
 !models/textag.pt
 !models/clip_probe.pt
+!models/textag_multilabel.pt
+!models/smallcnn_multilabel.pt
