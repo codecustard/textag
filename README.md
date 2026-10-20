@@ -92,13 +92,15 @@ plus the LR scheduler tune the number of epochs and the learning rate automatica
 ## Repository
 
 ```
-app.py                  Gradio app
-src/textag/             data.py, model.py, engine.py (training loop), infer.py
-notebooks/              01_eda … 06_clip (executed, with outputs)
+app.py                  Gradio app (single-label classifier)
+search_app.py           Gradio search app (multi-label: tag, search by tags, find similar)
+src/textag/             data.py, model.py, engine.py (training loop), infer.py, multilabel.py, search.py
+notebooks/              01_eda … 07_search (executed, with outputs)
 tests/                  smoke tests (pytest)
 examples/               example images for the app (from the DTD test set)
 scripts/deploy_space.py upload the app to a Hugging Face Space
 models/textag.pt        trained weights used by the app (45 MB, produced by 03_resnet)
+models/*_multilabel.pt  multi-label weights; textag_multilabel.pt is used by the search app (from 07_search)
 ```
 
 ## Run locally
@@ -108,7 +110,13 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python app.py            # open http://127.0.0.1:7860
 python app.py --share    # also prints a public link, valid 72 hours, while the app runs
+
+python search_app.py                           # search app; library = DTD test images
+python search_app.py --folder path/to/textures # search your own folder of textures
 ```
+
+The search app indexes its library on the first start (every image through the model once, ~2 min for 1,880 images
+on a laptop CPU) and saves the index in `data/`, so later starts are instant. It also takes `--share`.
 
 `requirements.txt` pins the versions used for deployment (Linux, CPU). On an **Intel Mac**, current PyTorch isn't available;
 use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gradio>=5" pillow` instead.
