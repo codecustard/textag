@@ -93,7 +93,7 @@ plus the LR scheduler tune the number of epochs and the learning rate automatica
 
 ```
 app.py                  Gradio app (single-label classifier)
-search_app.py           Gradio search app (multi-label: tag, search by tags, find similar)
+search_app.py           Gradio search app: tag, search, find similar (our multi-label ResNet18, or CLIP with --model clip)
 src/textag/             data.py, model.py, engine.py (training loop), infer.py, multilabel.py, search.py
 notebooks/              01_eda … 07_search (executed, with outputs)
 tests/                  smoke tests (pytest)
@@ -113,10 +113,13 @@ python app.py --share    # also prints a public link, valid 72 hours, while the 
 
 python search_app.py                           # search app; library = DTD test images
 python search_app.py --folder path/to/textures # search your own folder of textures
+python search_app.py --model clip              # same app with CLIP: search with any words (port 7861)
 ```
 
 The search app indexes its library on the first start (every image through the model once, ~2 min for 1,880 images
-on a laptop CPU) and saves the index in `data/`, so later starts are instant. It also takes `--share`.
+on a laptop CPU) and saves the index in `data/`, so later starts are instant; images added to a `--folder` later are
+indexed at the next search. It also takes `--share`. `--model clip` needs `pip install open_clip_torch` (~600 MB of weights
+on first use) and is ~2–3× slower to index.
 
 `requirements.txt` pins the versions used for deployment (Linux, CPU). On an **Intel Mac**, current PyTorch isn't available;
 use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gradio>=5" pillow` instead.

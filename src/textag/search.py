@@ -1,8 +1,12 @@
-"""Texture search with the multi-label ResNet18: tag an image, search by tags, find similar images.
+"""Texture search: tag an image, search by tags or text, find similar images.
+
+Two models ("searchers"), same index and search code:
+  ResNetSearcher: our multi-label ResNet18 (47 tags, sigmoid scores)
+  ClipSearcher:   CLIP ViT-B/32, frozen, no training (47 tags zero-shot, plus free-text search)
 
 1. Index (once): run every image in a folder through the model and keep
-   - its 47 tag scores (sigmoid, 0-1)
-   - its embedding: the 512 numbers before the last layer, scaled to length 1
+   - its 47 tag scores
+   - its embedding: 512 numbers describing the image, scaled to length 1
    The index is saved to a file, so the next start is instant.
    update_index keeps it current: only images added since last time go through the model.
 2. Search: only math on the saved numbers, no model needed.
@@ -28,47 +32,79 @@ def list_images(folder) -> List[Path]:
     return sorted(p for p in Path(folder).rglob("*") if p.suffix.lower() in IMAGE_TYPES)
 
 
-def describe(model, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """One pass through the model. Returns (tag_scores, embeddings) for a batch of images.
+class ResNetSearcher:
+    """Our multi-label ResNet18 (models/textag_multilabel.pt)."""
 
-    For ResNet18: the embedding is what goes into its last layer (fc), so the tag scores
-    are just that last layer applied to it (same result as model(X), one pass instead of two).
-    """
-    features = embed(model, X)                         # (batch, 512)
-    tag_scores = torch.sigmoid(model.fc(features))     # (batch, 47)
-    embeddings = features / features.norm(dim=1, keepdim=True)
-    return tag_scores, embeddings
+    def __init__(self, model, classes: List[str]):
+        self.model = model.eval()
+        self.classes = classes
+        self.transform = eval_tf                     # same preprocessing as in training
+
+    def describe(self, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """One pass through the model. Returns (tag_scores, embeddings) for a batch of images.
+
+        The embedding is what goes into the last layer (fc), so the tag scores are just that
+        last layer applied to it (same result as model(X), one pass instead of two).
+        """
+        features = embed(self.model, X)                       # (batch, 512)
+        tag_scores = torch.sigmoid(self.model.fc(features))   # (batch, 47), each tag 0-1 on its own
+        embeddings = features / features.norm(dim=1, keepdim=True)
+        return tag_scores, embeddings
 
 
-def build_index(model, paths: List[Path], batch_size: int = 32) -> dict:
+class ClipSearcher:
+    """CLIP ViT-B/32 with OpenAI's weights, frozen (as in 06_clip). Needs `pip install open_clip_torch`."""
+
+    def __init__(self, classes: List[str]):
+        import open_clip                             # only needed for CLIP
+        self.model, _, self.transform = open_clip.create_model_and_transforms("ViT-B-32-quickgelu", pretrained="openai")
+        self.model.eval()
+        self.tokenizer = open_clip.get_tokenizer("ViT-B-32-quickgelu")
+        self.classes = classes
+        self.tag_text = self.encode_text([f"a {c} texture." for c in classes])   # (47, 512)
+
+    def encode_text(self, sentences: List[str]) -> torch.Tensor:
+        """Sentences -> 512 numbers each, scaled to length 1."""
+        with torch.inference_mode():
+            text = self.model.encode_text(self.tokenizer(sentences))
+        return text / text.norm(dim=1, keepdim=True)
+
+    def describe(self, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns (tag_scores, embeddings). Tag scores: zero-shot, 47 probabilities that add up to 1."""
+        features = self.model.encode_image(X)
+        embeddings = features / features.norm(dim=1, keepdim=True)            # (batch, 512)
+        tag_scores = torch.softmax(100 * embeddings @ self.tag_text.T, dim=1)  # 100 = CLIP's own scale
+        return tag_scores, embeddings
+
+
+def build_index(searcher, paths: List[Path], batch_size: int = 32) -> dict:
     """Run every image through the model once. Returns {"paths", "tag_scores", "embeddings"}."""
-    model.eval()
     kept, all_scores, all_embeddings = [], [], []
     with torch.inference_mode():
         for start in range(0, len(paths), batch_size):
             images, batch_paths = [], []
             for path in paths[start:start + batch_size]:
                 try:
-                    images.append(eval_tf(Image.open(path).convert("RGB")))
+                    images.append(searcher.transform(Image.open(path).convert("RGB")))
                     batch_paths.append(path)
                 except OSError:
                     print(f"skipped (can't open): {path}")
             if not images:
                 continue
-            tag_scores, embeddings = describe(model, torch.stack(images))
+            tag_scores, embeddings = searcher.describe(torch.stack(images))
             kept += batch_paths
             all_scores.append(tag_scores)
             all_embeddings.append(embeddings)
             print(f"indexed {start + len(images)}/{len(paths)}", end="\r")
     print()
     if not kept:                                   # nothing could be opened
-        return {"paths": [], "tag_scores": torch.zeros(0, model.fc[-1].out_features), "embeddings": torch.zeros(0, 512)}
+        return {"paths": [], "tag_scores": torch.zeros(0, len(searcher.classes)), "embeddings": torch.zeros(0, 512)}
     return {"paths": [str(p) for p in kept],
             "tag_scores": torch.cat(all_scores),
             "embeddings": torch.cat(all_embeddings)}
 
 
-def update_index(model, index: dict, paths: List[Path], index_file: Path):
+def update_index(searcher, index: dict, paths: List[Path], index_file: Path):
     """Bring a saved index up to date with the images in `paths`.
 
     Images no longer in `paths` are dropped; new images go through the model (only those).
@@ -93,7 +129,7 @@ def update_index(model, index: dict, paths: List[Path], index_file: Path):
     # 3. Index only the new images and add them at the end
     added = 0
     if new_paths:
-        new = build_index(model, new_paths)
+        new = build_index(searcher, new_paths)
         added = len(new["paths"])
         index = {"paths": index["paths"] + new["paths"],
                  "tag_scores": torch.cat([index["tag_scores"], new["tag_scores"]]),
@@ -103,34 +139,39 @@ def update_index(model, index: dict, paths: List[Path], index_file: Path):
     return index, added, removed
 
 
-def load_or_build_index(model, paths: List[Path], index_file: Path) -> dict:
+def load_or_build_index(searcher, paths: List[Path], index_file: Path) -> dict:
     """Load the saved index and update it (only new images are indexed); build it if there is none yet."""
     if index_file.exists():
-        index, added, removed = update_index(model, torch.load(index_file), paths, index_file)
+        index, added, removed = update_index(searcher, torch.load(index_file), paths, index_file)
         if added or removed:
             print(f"index updated: {added} added, {removed} removed")
         return index
     start = time.perf_counter()
-    index = build_index(model, paths)
+    index = build_index(searcher, paths)
     print(f"indexed {len(index['paths'])} images in {time.perf_counter() - start:.0f} s")
     index_file.parent.mkdir(parents=True, exist_ok=True)
     torch.save(index, index_file)
     return index
 
 
-def tag_image(model, classes: List[str], image: Image.Image, threshold: float = THRESHOLD):
-    """Every tag scoring at least `threshold`, best first. Returns ([(tag, score), ...], seconds)."""
+def tag_image(searcher, image: Image.Image, threshold: float = THRESHOLD, top_k: int = None):
+    """Tags for one image, best first. Returns ([(tag, score), ...], seconds).
+
+    Every tag scoring at least `threshold`, or, with top_k, the top_k tags whatever their score.
+    """
     start = time.perf_counter()
-    x = eval_tf(image.convert("RGB")).unsqueeze(0)    # add a batch dimension
+    x = searcher.transform(image.convert("RGB")).unsqueeze(0)    # add a batch dimension
     with torch.inference_mode():
-        tag_scores, _ = describe(model, x)
+        tag_scores, _ = searcher.describe(x)
     tag_scores = tag_scores[0]
     seconds = time.perf_counter() - start
 
     tags = []
     for i in tag_scores.argsort(descending=True).tolist():
-        if tag_scores[i] >= threshold:
-            tags.append((classes[i], tag_scores[i].item()))
+        if top_k is not None and len(tags) == top_k:
+            break
+        if top_k is not None or tag_scores[i] >= threshold:
+            tags.append((searcher.classes[i], tag_scores[i].item()))
     return tags, seconds
 
 
@@ -154,12 +195,20 @@ def search_tags(index: dict, classes: List[str], tags: List[str], k: int = 12) -
     return [(index["paths"][i], s) for s, i in zip(top.values.tolist(), top.indices.tolist())]
 
 
-def find_similar(model, index: dict, image: Image.Image, k: int = 12) -> Tuple[List[Tuple[str, float]], float]:
+def search_text(searcher, index: dict, text: str, k: int = 12) -> List[Tuple[str, float]]:
+    """CLIP only: top k images for any text, e.g. "stained glass". Returns [(path, similarity), ...]."""
+    query = searcher.encode_text([f"a photo of {text}"])[0]   # (512,)
+    similarity = index["embeddings"] @ query                   # (images,)
+    top = similarity.topk(min(k, len(similarity)))
+    return [(index["paths"][i], s) for s, i in zip(top.values.tolist(), top.indices.tolist())]
+
+
+def find_similar(searcher, index: dict, image: Image.Image, k: int = 12) -> Tuple[List[Tuple[str, float]], float]:
     """Top k images most similar to `image`. Returns ([(path, similarity), ...], seconds)."""
     start = time.perf_counter()
-    x = eval_tf(image.convert("RGB")).unsqueeze(0)
+    x = searcher.transform(image.convert("RGB")).unsqueeze(0)
     with torch.inference_mode():
-        _, query = describe(model, x)                       # (1, 512)
+        _, query = searcher.describe(x)                     # (1, 512)
     similarity = index["embeddings"] @ query[0]             # (images,)
     top = similarity.topk(min(k, len(similarity)))
     seconds = time.perf_counter() - start
