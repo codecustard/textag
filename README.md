@@ -123,9 +123,13 @@ The index keeps each image's 47 tag scores and its embedding (the 512 numbers be
 | 1,880 (40) | 69.7% | 91.7% |
 
 - **Pretraining does most of the work:** 5 images per class already reach 69% tag-search precision.
-- **Still climbing:** about +8 points mAP per doubling; one more doubling (~1,900 labeled images, ~$100–190 of labeling) should add ~7 points.
+- **Still climbing:** about +8 points mAP per doubling; one more doubling (~1,900 labeled images, roughly $190–660 at multi-tag labeling rates\*) should add ~7 points.
 - **Further out is a guess:** a power-law fit (each doubling removes ~17% of the remaining error) gives ~80% mAP at 10,000 images. Compute stays cheap
   (~12 min on a T4 for 1,880 images); labels are the real cost.
+
+\* Published labeling prices: ~$0.02–0.10 per image for one tag, up to ~$0.35 for complex multi-label work
+([BasicAI benchmark](https://www.basic.ai/blog-post/image-annotation-services-cost), [GigaBPO](https://gigabpo.com/data-labeling-cost-per-image/)).
+Estimates; prices vary by provider and change over time.
 
 ## Repository
 
@@ -194,4 +198,5 @@ use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gra
 - Yosinski et al. (2014), *How transferable are features in deep neural networks?* [arXiv:1411.1792](https://arxiv.org/abs/1411.1792)
 - Simonyan & Zisserman (2014), *Very Deep Convolutional Networks* (VGG). [arXiv:1409.1556](https://arxiv.org/abs/1409.1556)
 - Radford et al. (2021), *Learning Transferable Visual Models From Natural Language Supervision* (CLIP). [arXiv:2103.00020](https://arxiv.org/abs/2103.00020)
+- BasicAI, *How Much Do Image Annotation Services Cost?* (labeling price benchmark). [basic.ai](https://www.basic.ai/blog-post/image-annotation-services-cost)
 - Wang et al., *CNN Explainer* (TinyVGG). [poloclub.github.io/cnn-explainer](https://poloclub.github.io/cnn-explainer/)
