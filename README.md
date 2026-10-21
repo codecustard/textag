@@ -1,7 +1,8 @@
 # TexTag: texture auto-tagger for game assets
 
 Upload a texture and TexTag tags it by what it looks like (cracked, woven, scaly, marbled, honeycombed, ...),
-with its top 3 guesses and the inference time. Built with PyTorch and Gradio.
+with its top 3 guesses and the inference time. A second app searches a whole texture library by tag, by example image,
+or (with CLIP) by any words. Built with PyTorch and Gradio.
 
 **Demo:** `python app.py --share` starts the app and prints a temporary public link (`https://….gradio.live`, valid 72 hours). See [Run locally](#run-locally).
 
@@ -36,6 +37,9 @@ EDA: perfectly balanced, no corrupted files, all RGB, sizes mostly 300–640 px 
 | 6 | [05_inference](notebooks/05_inference.ipynb), `src/textag/infer.py` | Single-image prediction timed with `time.perf_counter()` |
 | 7 | `app.py` | Gradio app: image in → top 3 tags + inference time |
 | 8 | [06_clip](notebooks/06_clip.ipynb) | **Model 3, CLIP:** zero-shot (no training) and a linear probe (new last layer on frozen CLIP), plus text search |
+| 9 | [07_search](notebooks/07_search.ipynb), `src/textag/multilabel.py` | **Model 4, multi-label:** several tags per image (sigmoid + `BCEWithLogitsLoss`), search index, tag search and find-similar vs CLIP |
+| 10 | `search_app.py`, `src/textag/search.py` | Gradio search app: tag, search by tags (or any words with CLIP), find similar; auto re-index of a folder |
+| 11 | [08_data_size](notebooks/08_data_size.ipynb) | **Learning curve:** would more labeled data help? Train on 5–40 images per class, extrapolate, cost vs benefit |
 
 **Training setup** (same for every model, so the comparison is fair): `CrossEntropyLoss` (standard for multi-class),
 `AdamW` (weight decay 1e-4), batch size 32, `ReduceLROnPlateau` (halve the LR when validation loss stalls for 3 epochs),
@@ -89,13 +93,47 @@ plus the LR scheduler tune the number of epochs and the learning rate automatica
 - The cost: CLIP's image encoder is ~8× bigger (~350 MB vs 45 MB) and ~3× slower per image on CPU. The app still uses ResNet18.
 - CLIP can search with words outside the 47 classes ("rusty metal", "wood planks", "brick wall" find the right textures), the basis for a texture-search tool.
 
+**Model 4: multi-label tags and search** ([07_search](notebooks/07_search.ipynb)). A classifier picks one of 47 classes; search needs a
+score for every tag. DTD's second label file (`labels_joint_anno.txt`) lists every tag an image got (~15% of images have 2–4).
+Same models, one change: a sigmoid per tag with `BCEWithLogitsLoss` (47 independent yes/no answers) instead of softmax.
+The index keeps each image's 47 tag scores and its embedding (the 512 numbers before the last layer).
+
+| Test set | Tagging mAP | Tag search P@10 | Find similar P@10 |
+|---|---|---|---|
+| Random | – | 2.5% | 3.0% |
+| SmallCNN multi-label | 25.1% | 45.7% | 19.6% |
+| **ResNet18 multi-label** | **69.7%** | **91.7%** | **58.9%** |
+| CLIP ViT-B/32 (zero-shot) | 24.8% | 37.7% | 53.9% |
+
+- **Trained for the task beats bigger and general, on that task:** ResNet18 beats CLIP on DTD's tags (91.7% vs 37.7% tag search) and even on find-similar.
+- **Two tags at once** (multiply the scores): 37% of the top 5 have both tags listed, vs 7% for CLIP and 0.7% random.
+- **Tagging** with a threshold picked on validation (0.35): precision 70.1%, recall 61.2%.
+- **Caveat:** the extra tags are incomplete (most images list one tag even when two fit), so every score is a slight underestimate.
+- **Search app:** indexing 1,880 images takes ~62 s on a laptop CPU; searches are then instant. With `--model clip` it finds textures
+  outside the 47 tags (a stained-glass image ranks #1 for "stained glass"; a vector honeycomb that ResNet18 can't tag, CLIP tags honeycombed 59%).
+
+**Would more data help?** ([08_data_size](notebooks/08_data_size.ipynb)). The multi-label ResNet18 trained on slices of the training set
+(same recipe, every class present):
+
+| Training images | Test mAP | Tag search P@10 |
+|---|---|---|
+| 235 (5 per class) | 44.7% | 69.4% |
+| 470 (10) | 53.8% | 80.0% |
+| 940 (20) | 58.8% | 83.4% |
+| 1,880 (40) | 69.7% | 91.7% |
+
+- **Pretraining does most of the work:** 5 images per class already reach 69% tag-search precision.
+- **Still climbing:** about +8 points mAP per doubling; one more doubling (~1,900 labeled images, ~$100–190 of labeling) should add ~7 points.
+- **Further out is a guess:** a power-law fit (each doubling removes ~17% of the remaining error) gives ~80% mAP at 10,000 images. Compute stays cheap
+  (~12 min on a T4 for 1,880 images); labels are the real cost.
+
 ## Repository
 
 ```
 app.py                  Gradio app (single-label classifier)
 search_app.py           Gradio search app: tag, search, find similar (our multi-label ResNet18, or CLIP with --model clip)
 src/textag/             data.py, model.py, engine.py (training loop), infer.py, multilabel.py, search.py
-notebooks/              01_eda … 07_search (executed, with outputs)
+notebooks/              01_eda … 08_data_size (executed, with outputs)
 tests/                  smoke tests (pytest)
 examples/               example images for the app (from the DTD test set)
 scripts/deploy_space.py upload the app to a Hugging Face Space
@@ -124,7 +162,7 @@ on first use) and is ~2–3× slower to index.
 `requirements.txt` pins the versions used for deployment (Linux, CPU). On an **Intel Mac**, current PyTorch isn't available;
 use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gradio>=5" pillow` instead.
 
-**Train:** open `notebooks/02_baseline.ipynb` or `03_resnet.ipynb` in Google Colab (GPU runtime) and run all; the first cell clones this repo.
+**Train:** open `notebooks/02_baseline.ipynb`, `03_resnet.ipynb`, `07_search.ipynb` or `08_data_size.ipynb` in Google Colab (GPU runtime) and run all; the first cell clones this repo.
 **Test:** `pip install -r requirements-dev.txt && pytest -q`
 
 ## Deploy
@@ -138,14 +176,14 @@ use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gra
 ## Limitations
 
 - **Patterns, not materials:** DTD's 47 classes describe patterns (grooved, cracked), not materials (wood, metal, stone).
-- **Photos, not game art:** trained on real photos; stylized or hand-painted textures get lower confidence.
-- **One label per image:** real textures often contain several patterns (e.g. a tiled floor with swirl motifs).
+- **Photos, not game art:** trained on real photos; stylized or vector textures can be missed entirely (a flat vector honeycomb gets no tag above 35%).
+- **Incomplete tags:** the multi-label file lists only one tag for most images, so the multi-label model is shy about second tags and its scores are underestimates.
 - **Data license:** DTD is intended for research use, so the trained model and examples are for demonstration, not commercial use.
 
 ## Future work
 
-- **Switch to CLIP** for more accurate tags and open-vocabulary search (any words, e.g. "mossy stone"), with tags as filters
-- **Multi-label tagging** (several tags per texture)
+- **CLIP for open-vocabulary search** (any words, e.g. "mossy stone") alongside the fine-tuned tags; started as the search app's `--model clip`
+- **Better labels:** complete the extra tags (e.g. CLIP suggests, a person approves); the learning curve says more labeled data still helps
 - **Game-engine plugin** (e.g. Godot): index a project's textures once, then search by content instead of filename; group PBR map sets (base color, normal, roughness, ...) into one material and tag the base color
 - Retrain on game-style textures and material classes
 
