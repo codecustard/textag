@@ -136,6 +136,24 @@ The multi-label models trained on slices of the training set (same recipe, every
 ([BasicAI benchmark](https://www.basic.ai/blog-post/image-annotation-services-cost), [GigaBPO](https://gigabpo.com/data-labeling-cost-per-image/)).
 Estimates; prices vary by provider and change over time.
 
+## What this means for a real tool: specialist vs generalist
+
+**47 DTD patterns aren't what game developers search for.** Real queries mix patterns with materials, objects and styles:
+"dog fur", "rusty car paint", "mossy stone", "stained glass", "hand-painted grass". None of those are DTD tags. So the trained models here prove the pipeline
+(data → training → evaluation → index → search app), not a vocabulary a game developer could use as is.
+
+| | Specialist (trained on our 47 tags) | Generalist (pretrained: ResNet18 on ImageNet, CLIP) |
+|---|---|---|
+| Knows | only the 47 texture patterns | general vision: objects, materials, textures, styles |
+| Data cost | from scratch: ~17k–25k labeled images just to match ResNet18-on-235, millions to match it fully (09) | already paid by someone else (1.2M ImageNet photos; ~400M image–caption pairs for CLIP) |
+| New label ("wood", "dog fur") | label new data and retrain | CLIP: works immediately with any words; ResNet18: a small fine-tune |
+| Best at | precision on its own tags (91.7% tag search) | open-ended search (CLIP finds "stained glass" #1) |
+
+**Takeaway: building on an existing model saves most of the cost.** A pretrained generalist has already learned general vision
+from millions of images, work someone else paid for. Fine-tuning it on a few hundred labeled images got further here than training
+from scratch on all of them. For a real texture tool that suggests CLIP for free-text search, plus a fine-tuned model for the
+categories a studio cares about (materials, surface types, art styles), labeled on the textures the tool will actually index.
+
 ## Repository
 
 ```
@@ -185,7 +203,7 @@ use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gra
 ## Limitations
 
 - **Patterns, not materials:** DTD's 47 classes describe patterns (grooved, cracked), not materials (wood, metal, stone).
-- **Photos, not game art:** trained on real photos; stylized or vector textures can be missed entirely (a flat vector honeycomb gets no tag above 35%).
+- **Photos only:** no stylized art (hand-painted, pixel, vector); a flat vector honeycomb gets no tag above 35%.
 - **Incomplete tags:** the multi-label file lists only one tag for most images, so the multi-label model is shy about second tags and its scores are underestimates.
 - **Data license:** DTD is intended for research use, so the trained model and examples are for demonstration, not commercial use.
 
