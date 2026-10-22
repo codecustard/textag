@@ -40,6 +40,7 @@ EDA: perfectly balanced, no corrupted files, all RGB, sizes mostly 300–640 px 
 | 9 | [07_search](notebooks/07_search.ipynb), `src/textag/multilabel.py` | **Model 4, multi-label:** several tags per image (sigmoid + `BCEWithLogitsLoss`), search index, tag search and find-similar vs CLIP |
 | 10 | `search_app.py`, `src/textag/search.py` | Gradio search app: tag, search by tags (or any words with CLIP), find similar; auto re-index of a folder |
 | 11 | [08_data_size](notebooks/08_data_size.ipynb) | **Learning curve:** would more labeled data help? Train on 5–40 images per class, extrapolate, cost vs benefit |
+| 12 | [09_data_size_smallcnn](notebooks/09_data_size_smallcnn.ipynb) | **Learning curve from scratch:** the same slices with SmallCNN, compared with the pretrained ResNet18 |
 
 **Training setup** (same for every model, so the comparison is fair): `CrossEntropyLoss` (standard for multi-class),
 `AdamW` (weight decay 1e-4), batch size 32, `ReduceLROnPlateau` (halve the LR when validation loss stalls for 3 epochs),
@@ -112,20 +113,24 @@ The index keeps each image's 47 tag scores and its embedding (the 512 numbers be
 - **Search app:** indexing 1,880 images takes ~62 s on a laptop CPU; searches are then instant. With `--model clip` it finds textures
   outside the 47 tags (a stained-glass image ranks #1 for "stained glass"; a vector honeycomb that ResNet18 can't tag, CLIP tags honeycombed 59%).
 
-**Would more data help?** ([08_data_size](notebooks/08_data_size.ipynb)). The multi-label ResNet18 trained on slices of the training set
-(same recipe, every class present):
+**Would more data help?** ([08_data_size](notebooks/08_data_size.ipynb), [09_data_size_smallcnn](notebooks/09_data_size_smallcnn.ipynb)).
+The multi-label models trained on slices of the training set (same recipe, every class present), pretrained ResNet18 vs SmallCNN from scratch:
 
-| Training images | Test mAP | Tag search P@10 |
+| Training images | ResNet18 mAP / P@10 | SmallCNN mAP / P@10 |
 |---|---|---|
-| 235 (5 per class) | 44.7% | 69.4% |
-| 470 (10) | 53.8% | 80.0% |
-| 940 (20) | 58.8% | 83.4% |
-| 1,880 (40) | 69.7% | 91.7% |
+| 235 (5 per class) | 44.7% / 69.4% | 5.4% / 8.5% |
+| 470 (10) | 53.8% / 80.0% | 9.9% / 17.0% |
+| 940 (20) | 58.8% / 83.4% | 16.0% / 30.2% |
+| 1,880 (40) | 69.7% / 91.7% | 26.4% / 47.4% |
 
 - **Pretraining does most of the work:** 5 images per class already reach 69% tag-search precision.
 - **Still climbing:** about +8 points mAP per doubling; one more doubling (~1,900 labeled images, roughly $190–660 at multi-tag labeling rates\*) should add ~7 points.
 - **Further out is a guess:** a power-law fit (each doubling removes ~17% of the remaining error) gives ~80% mAP at 10,000 images. Compute stays cheap
   (~12 min on a T4 for 1,880 images); labels are the real cost.
+- **From scratch is far behind:** SmallCNN with all 1,880 images (47.4% P@10) is below ResNet18 with 235 (69.4%).
+  Its gains grow with each doubling (+8.5 → +13.2 → +17.2 P@10): it's still in the steep early part of its curve, and still undertrained.
+- **Pretraining is worth roughly 74–108× the data:** by a power-law fit, SmallCNN would need ~17,000–25,000 labeled images to match
+  ResNet18 trained on 235, about $1,700–8,800 of multi-tag labels\*. A rough extrapolation, ~10× past the measured range.
 
 \* Published labeling prices: ~$0.02–0.10 per image for one tag, up to ~$0.35 for complex multi-label work
 ([BasicAI benchmark](https://www.basic.ai/blog-post/image-annotation-services-cost), [GigaBPO](https://gigabpo.com/data-labeling-cost-per-image/)).
@@ -137,7 +142,7 @@ Estimates; prices vary by provider and change over time.
 app.py                  Gradio app (single-label classifier)
 search_app.py           Gradio search app: tag, search, find similar (our multi-label ResNet18, or CLIP with --model clip)
 src/textag/             data.py, model.py, engine.py (training loop), infer.py, multilabel.py, search.py
-notebooks/              01_eda … 08_data_size (executed, with outputs)
+notebooks/              01_eda … 09_data_size_smallcnn (executed, with outputs)
 tests/                  smoke tests (pytest)
 examples/               example images for the app (from the DTD test set)
 scripts/deploy_space.py upload the app to a Hugging Face Space
@@ -166,7 +171,7 @@ on first use) and is ~2–3× slower to index.
 `requirements.txt` pins the versions used for deployment (Linux, CPU). On an **Intel Mac**, current PyTorch isn't available;
 use Python 3.12 and `pip install torch==2.2.2 torchvision==0.17.2 "numpy<2" "gradio>=5" pillow` instead.
 
-**Train:** open `notebooks/02_baseline.ipynb`, `03_resnet.ipynb`, `07_search.ipynb` or `08_data_size.ipynb` in Google Colab (GPU runtime) and run all; the first cell clones this repo.
+**Train:** open `notebooks/02_baseline.ipynb`, `03_resnet.ipynb`, `07_search.ipynb`, `08_data_size.ipynb` or `09_data_size_smallcnn.ipynb` in Google Colab (GPU runtime) and run all; the first cell clones this repo.
 **Test:** `pip install -r requirements-dev.txt && pytest -q`
 
 ## Deploy
